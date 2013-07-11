@@ -1,5 +1,6 @@
 package hudson.plugins.mavendeploymentlinker;
 
+import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
@@ -48,11 +49,14 @@ import com.ning.http.client.Response;
 /**
  * This builder is able to resolve the linked maven artifacts on other projects and use the information to download the deployed artifacts to the local workspace. This allows to save space on the
  * master, by not having to archive the artifacts for the copyartifact plugin.
- * 
+ *
  * @author Dominik Bartholdi (imod)
- * 
+ *
  */
 public class MavenDeploymentDownloader extends Builder {
+
+    private static final String BUILD_NUMBER_LINK_NAME = "Build Number";
+    private static final String BUILD_NUMBER_LINK_ID = "buildNumber";
 
     private final String projectName;
     private final String filePattern;
@@ -63,9 +67,10 @@ public class MavenDeploymentDownloader extends Builder {
     private final String stripVersionPattern;
     private final String permaLink;
     private transient Pattern filePatternMatcher;
+    private final String buildNumber;
 
     /**
-     * 
+     *
      * @param projectName
      *            the name of the project to copy the artifacts from
      * @param filePattern
@@ -85,7 +90,7 @@ public class MavenDeploymentDownloader extends Builder {
      */
     @DataBoundConstructor
     public MavenDeploymentDownloader(String projectName, String filePattern, String permaLink, String targetDir, boolean stripVersion,
-            String stripVersionPattern, boolean failIfNoArtifact, boolean cleanTargetDir) {
+            String stripVersionPattern, boolean failIfNoArtifact, boolean cleanTargetDir, String buildNumber) {
         // check the permissions only if we can
         if(!projectName.startsWith("$")){ // if this is a parameter, we can't check the name here it will be expanded by the TokenMacro...
             StaplerRequest req = Stapler.getCurrentRequest();
@@ -105,6 +110,7 @@ public class MavenDeploymentDownloader extends Builder {
         this.failIfNoArtifact = failIfNoArtifact;
         this.cleanTargetDir = cleanTargetDir;
         this.stripVersionPattern = Util.fixEmpty(stripVersionPattern);
+        this.buildNumber = buildNumber;
     }
 
     private Pattern getFilePatternMatcher() {
@@ -146,11 +152,32 @@ public class MavenDeploymentDownloader extends Builder {
         return failIfNoArtifact;
     }
 
+    public String getBuildNumber() {
+        return buildNumber;
+    }
+
+    public void logResolvedArtifact(String resolvedProjectName, Run<?, ?> resolvedJob, Permalink link,
+                    PrintStream console) {
+        // do some hyper linked logging
+        final String jobUrl = Hudson.getInstance().getRootUrl() + "job/" + resolvedProjectName;
+        final String linkBuildNr = HyperlinkNote.encodeTo(jobUrl + "/" + resolvedJob.number, "#" + resolvedJob.number);
+
+        final String linkPerma;
+        if (link == null) {
+            linkPerma = linkBuildNr;
+        } else {
+            linkPerma = HyperlinkNote.encodeTo(jobUrl + "/" + link.getId(), link.getDisplayName());
+        }
+        final String linkJob = HyperlinkNote.encodeTo(jobUrl, resolvedProjectName);
+
+        console.println(Messages.resolveArtifact(linkBuildNr, linkPerma, linkJob));
+    }
+
     @Override
     public boolean perform(AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener) throws InterruptedException, IOException {
 
         final PrintStream console = listener.getLogger();
-        
+
         String resolvedProjectName = null;
         try {
             resolvedProjectName = TokenMacro.expandAll( build, listener, projectName );
@@ -158,12 +185,12 @@ public class MavenDeploymentDownloader extends Builder {
             console.println(Messages.jobNameExandFailed()+": "+e1.getMessage());
             return false;
         }
-        
+
         if(StringUtils.isBlank(resolvedProjectName)){
             console.println(Messages.noJobName());
             return false;
         }
-        
+
         final Job<?, ?> job = Hudson.getInstance().getItemByFullName(resolvedProjectName, Job.class);
 
         FilePath targetDirFp = new FilePath(build.getWorkspace(), targetDir);
@@ -172,18 +199,31 @@ public class MavenDeploymentDownloader extends Builder {
             targetDirFp.deleteContents();
         }
         List<MavenDeploymentLinkerAction> linkerActions = Collections.emptyList();
-        for (Permalink link : job.getPermalinks()) {
-            if (link.getId().equals(permaLink)) {
-                final Run<?, ?> resolvedJob = link.resolve(job);
-                linkerActions = resolvedJob.getActions(MavenDeploymentLinkerAction.class);
 
-                {
-                    // do some hyper linked logging
-                    final String jobUrl = Hudson.getInstance().getRootUrl() + "job/" + resolvedProjectName;
-                    final String linkBuildNr = HyperlinkNote.encodeTo(jobUrl + "/" + resolvedJob.number, "#" + resolvedJob.number);
-                    final String linkPerma = HyperlinkNote.encodeTo(jobUrl + "/" + link.getId(), link.getDisplayName());
-                    final String linkJob = HyperlinkNote.encodeTo(jobUrl, resolvedProjectName);
-                    console.println(Messages.resolveArtifact(linkBuildNr, linkPerma, linkJob));
+        //build.getBuildVariableResolver().r
+        final EnvVars envVars = build.getEnvironment(listener);
+        final String expandedBuildNumber = envVars.expand(buildNumber);
+
+        if (BUILD_NUMBER_LINK_ID.equals(permaLink)) {
+            if (!StringUtils.isNumeric(expandedBuildNumber)) {
+                console.println(Messages.notANumber(expandedBuildNumber, buildNumber));
+            } else {
+                final Run<?, ?> resolvedJob = job.getBuildByNumber(Integer.valueOf(expandedBuildNumber));
+                if (resolvedJob == null) {
+                    console.println(Messages.buildDoesNotExist(expandedBuildNumber, job.getName()));
+                } else {
+                    linkerActions = resolvedJob.getActions(MavenDeploymentLinkerAction.class);
+
+                    logResolvedArtifact(resolvedProjectName, resolvedJob, null, console);
+                }
+            }
+        } else {
+            for (Permalink link : job.getPermalinks()) {
+                if (link.getId().equals(permaLink)) {
+                    final Run<?, ?> resolvedJob = link.resolve(job);
+                    linkerActions = resolvedJob.getActions(MavenDeploymentLinkerAction.class);
+
+                    logResolvedArtifact(resolvedProjectName, resolvedJob, link, console);
                 }
             }
         }
@@ -264,6 +304,18 @@ public class MavenDeploymentDownloader extends Builder {
             return c;
         }
 
+//        public AutoCompletionCandidates doAutoCompleteBuildNumber(@AncestorInPath Job<?, ?> defaultJob, @QueryParameter String value, @QueryParameter("projectName") String projectName) {
+//        	AutoCompletionCandidates c = new AutoCompletionCandidates();
+//
+//        	if (projectName != null) {
+//        		Job<?, ?> job = Hudson.getInstance().getItem(projectName, defaultJob, Job.class);
+//
+//        		job.getbui
+//        	}
+//
+//        	return c;
+//        }
+
         public ListBoxModel doFillPermaLinkItems(@AncestorInPath Job<?, ?> defaultJob, @QueryParameter("projectName") String projectName) {
             // gracefully fall back to some job, if none is given
             Job<?, ?> j = null;
@@ -276,6 +328,10 @@ public class MavenDeploymentDownloader extends Builder {
             for (Permalink p : j.getPermalinks()) {
                 r.add(new Option(p.getDisplayName(), p.getId()));
             }
+
+            // add also job number action
+            r.add(new Option(BUILD_NUMBER_LINK_NAME, BUILD_NUMBER_LINK_ID));
+
             return r;
         }
 
@@ -297,7 +353,7 @@ public class MavenDeploymentDownloader extends Builder {
 
         /**
          * checks the pattern used to strip the version of the file name - this is optional, as we have a default.
-         * 
+         *
          * @see VersionUtil#SNAPSHOT_FILE_PATTERN_STR
          * @see VersionUtil#VERSION_FILE_PATTERN_STR
          */
