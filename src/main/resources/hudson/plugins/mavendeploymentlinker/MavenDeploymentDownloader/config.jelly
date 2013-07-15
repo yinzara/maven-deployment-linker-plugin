@@ -14,6 +14,11 @@
   <f:entry title="${%Target directory}" field="targetDir">
     <f:textbox />
   </f:entry>
+  <f:optionalBlock name="authenticationBlock" checked="${!empty(instance.credentialsId)}" title="${%Authentication required}" help="/descriptor/hudson.plugins.mavendeploymentlinker.MavenDeploymentDownloader/help/authenticationBlock">
+    <f:entry title="${%Credentials}" field="credentialsId">
+      <f:select/>
+    </f:entry>
+  </f:optionalBlock>
   <f:advanced>
     <f:entry title="${%Fail if no artifact}" field="failIfNoArtifact">
       <f:checkbox checked="${instance.isFailIfNoArtifact()}" />

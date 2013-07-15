@@ -15,10 +15,12 @@ import hudson.model.Job;
 import hudson.model.PermalinkProjectAction.Permalink;
 import hudson.model.Run;
 import hudson.plugins.mavendeploymentlinker.MavenDeploymentLinkerAction.ArtifactVersion;
+import hudson.security.ACL;
 import hudson.tasks.BuildStepDescriptor;
 import hudson.tasks.Builder;
 import hudson.util.FormValidation;
 import hudson.util.IOUtils;
+import hudson.util.Secret;
 import hudson.util.ListBoxModel;
 import hudson.util.ListBoxModel.Option;
 
@@ -43,12 +45,19 @@ import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.Stapler;
 import org.kohsuke.stapler.StaplerRequest;
 
+import com.cloudbees.jenkins.plugins.sshcredentials.SSHUserPassword;
+import com.cloudbees.plugins.credentials.CredentialsProvider;
 import com.ning.http.client.AsyncHttpClient;
+import com.ning.http.client.AsyncHttpClientConfig;
+import com.ning.http.client.Realm;
+import com.ning.http.client.Realm.AuthScheme;
 import com.ning.http.client.Response;
 
 /**
- * This builder is able to resolve the linked maven artifacts on other projects and use the information to download the deployed artifacts to the local workspace. This allows to save space on the
- * master, by not having to archive the artifacts for the copyartifact plugin.
+ * This builder is able to resolve the linked maven artifacts on other projects
+ * and use the information to download the deployed artifacts to the local
+ * workspace. This allows to save space on the master, by not having to archive
+ * the artifacts for the copyartifact plugin.
  *
  * @author Dominik Bartholdi (imod)
  *
@@ -68,6 +77,21 @@ public class MavenDeploymentDownloader extends Builder {
     private final String permaLink;
     private transient Pattern filePatternMatcher;
     private final String buildNumber;
+    private final String credentialsId;
+
+    public static class AuthenticationBlock {
+
+        private final String credentialsId;
+
+        @DataBoundConstructor
+        public AuthenticationBlock(String credentialsId) {
+            this.credentialsId = credentialsId;
+        }
+
+        public String getCredentialsId() {
+            return credentialsId;
+        }
+    }
 
     /**
      *
@@ -86,19 +110,26 @@ public class MavenDeploymentDownloader extends Builder {
      * @param failIfNoArtifact
      *            fail if there was no artifact to copy
      * @param cleanTargetDir
-     *            remove the content of the target directory before copying the new files?
+     *            remove the content of the target directory before copying the
+     *            new files?
      */
     @DataBoundConstructor
-    public MavenDeploymentDownloader(String projectName, String filePattern, String permaLink, String targetDir, boolean stripVersion,
-            String stripVersionPattern, boolean failIfNoArtifact, boolean cleanTargetDir, String buildNumber) {
+    public MavenDeploymentDownloader(String projectName, String filePattern, String permaLink, String targetDir,
+                    boolean stripVersion, String stripVersionPattern, boolean failIfNoArtifact, boolean cleanTargetDir,
+                    String buildNumber, AuthenticationBlock authenticationBlock) {
         // check the permissions only if we can
-        if(!projectName.startsWith("$")){ // if this is a parameter, we can't check the name here it will be expanded by the TokenMacro...
+        if (!projectName.startsWith("$")) { // if this is a parameter, we can't
+                                            // check the name here it will be
+                                            // expanded by the TokenMacro...
             StaplerRequest req = Stapler.getCurrentRequest();
             if (req != null) {
-                // Prevents both invalid values and access to artifacts of projects which this user cannot see.
-                // If value is parameterized, it will be checked when build runs.
+                // Prevents both invalid values and access to artifacts of
+                // projects which this user cannot see.
+                // If value is parameterized, it will be checked when build
+                // runs.
                 if (Hudson.getInstance().getItemByFullName(projectName, Job.class) == null) {
-                    projectName = ""; // Ignore/clear bad value to avoid ugly 500 page
+                    projectName = ""; // Ignore/clear bad value to avoid ugly
+                                      // 500 page
                 }
             }
         }
@@ -111,6 +142,13 @@ public class MavenDeploymentDownloader extends Builder {
         this.cleanTargetDir = cleanTargetDir;
         this.stripVersionPattern = Util.fixEmpty(stripVersionPattern);
         this.buildNumber = buildNumber;
+
+        if (authenticationBlock != null) {
+            this.credentialsId = authenticationBlock.getCredentialsId();
+        } else {
+            this.credentialsId = null;
+        }
+
     }
 
     private Pattern getFilePatternMatcher() {
@@ -156,6 +194,10 @@ public class MavenDeploymentDownloader extends Builder {
         return buildNumber;
     }
 
+    public String getCredentialsId() {
+        return credentialsId;
+    }
+
     public void logResolvedArtifact(String resolvedProjectName, Run<?, ?> resolvedJob, Permalink link,
                     PrintStream console) {
         // do some hyper linked logging
@@ -173,35 +215,51 @@ public class MavenDeploymentDownloader extends Builder {
         console.println(Messages.resolveArtifact(linkBuildNr, linkPerma, linkJob));
     }
 
+    private SSHUserPassword lookupCredentials() {
+        if (credentialsId != null) {
+            final List<SSHUserPassword> credentialsList = CredentialsProvider.lookupCredentials(SSHUserPassword.class,
+                            Hudson.getInstance(), ACL.SYSTEM);
+            for (final SSHUserPassword credentials : credentialsList) {
+                if (credentials.getId().equals(credentialsId)) {
+                    return credentials;
+                }
+            }
+        }
+
+        return null;
+    }
+
     @Override
-    public boolean perform(AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener) throws InterruptedException, IOException {
+    public boolean perform(AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener)
+                    throws InterruptedException, IOException {
 
         final PrintStream console = listener.getLogger();
 
         String resolvedProjectName = null;
         try {
-            resolvedProjectName = TokenMacro.expandAll( build, listener, projectName );
+            resolvedProjectName = TokenMacro.expandAll(build, listener, projectName);
         } catch (MacroEvaluationException e1) {
-            console.println(Messages.jobNameExandFailed()+": "+e1.getMessage());
+            console.println(Messages.jobNameExandFailed() + ": " + e1.getMessage());
             return false;
         }
 
-        if(StringUtils.isBlank(resolvedProjectName)){
+        if (StringUtils.isBlank(resolvedProjectName)) {
             console.println(Messages.noJobName());
             return false;
         }
 
         final Job<?, ?> job = Hudson.getInstance().getItemByFullName(resolvedProjectName, Job.class);
 
-        FilePath targetDirFp = new FilePath(build.getWorkspace(), targetDir);
+        final EnvVars envVars = build.getEnvironment(listener);
+        final String expandedTargetDir = envVars.expand(targetDir);
+
+        FilePath targetDirFp = new FilePath(build.getWorkspace(), expandedTargetDir);
         if (cleanTargetDir) {
             console.println("deleting content of " + targetDirFp.getRemote());
             targetDirFp.deleteContents();
         }
         List<MavenDeploymentLinkerAction> linkerActions = Collections.emptyList();
 
-        //build.getBuildVariableResolver().r
-        final EnvVars envVars = build.getEnvironment(listener);
         final String expandedBuildNumber = envVars.expand(buildNumber);
 
         if (BUILD_NUMBER_LINK_ID.equals(permaLink)) {
@@ -249,11 +307,28 @@ public class MavenDeploymentDownloader extends Builder {
                         matchedFiles++;
                         FilePath fp = new FilePath(targetDirFp, fileName);
                         console.println(Messages.downloadArtifact(HyperlinkNote.encodeTo(url, url), fp.getRemote()));
-                        AsyncHttpClient client = new AsyncHttpClient();
+
+                        SSHUserPassword credentials = lookupCredentials();
+
+                        AsyncHttpClient client;
+                        if (credentials == null) {
+                            client = new AsyncHttpClient();
+                        } else {
+                            AsyncHttpClientConfig.Builder builder = new AsyncHttpClientConfig.Builder();
+                            Realm realm = new Realm.RealmBuilder().setPrincipal(credentials.getUsername())
+                                            .setPassword(Secret.toString(credentials.getPassword()))
+                                            .setUsePreemptiveAuth(true).setScheme(AuthScheme.BASIC).build();
+                            builder.setRealm(realm).build();
+                            client = new AsyncHttpClient(builder.build());
+                        }
+
                         try {
-                            downloadFile(client, url, fp);
+                            if (!downloadFile(client, url, fp, console)) {
+                                return false;
+                            }
                         } catch (ExecutionException e) {
-                            console.println(Messages.downloadArtifactFailed(HyperlinkNote.encodeTo(url, url), e.getMessage()));
+                            console.println(Messages.downloadArtifactFailed(HyperlinkNote.encodeTo(url, url),
+                                            e.getMessage()));
                             throw new IOException(Messages.downloadArtifactFailed(url, e.getMessage()), e);
                         }
                     }
@@ -276,15 +351,24 @@ public class MavenDeploymentDownloader extends Builder {
         int slashIndex = url.lastIndexOf('/');
         String fname = url.substring(slashIndex + 1);
         if (stripVersion) {
-            fname = stripVersionPattern == null ? VersionUtil.stripeVersion(fname) : VersionUtil.stripeVersion(fname, stripVersionPattern);
+            fname = stripVersionPattern == null ? VersionUtil.stripeVersion(fname) : VersionUtil.stripeVersion(fname,
+                            stripVersionPattern);
         }
         return fname;
     }
 
-    private void downloadFile(AsyncHttpClient client, String url, FilePath target) throws InterruptedException, ExecutionException, IOException {
+    private boolean downloadFile(AsyncHttpClient client, String url, FilePath target, PrintStream console) throws InterruptedException,
+                    ExecutionException, IOException {
         final Response response = client.prepareGet(url).execute().get();
-        final InputStream is = response.getResponseBodyAsStream();
-        IOUtils.copy(is, target.write());// don't close stream...
+
+        if (response.getStatusCode() == 200) {
+            final InputStream is = response.getResponseBodyAsStream();
+            IOUtils.copy(is, target.write());// don't close stream...
+            return true;
+        }
+
+        console.println(Messages.downloadArtifactFailedHttp(url, response.getStatusCode(), response.getStatusText()));
+        return false;
     }
 
     @Override
@@ -304,19 +388,21 @@ public class MavenDeploymentDownloader extends Builder {
             return c;
         }
 
-//        public AutoCompletionCandidates doAutoCompleteBuildNumber(@AncestorInPath Job<?, ?> defaultJob, @QueryParameter String value, @QueryParameter("projectName") String projectName) {
-//        	AutoCompletionCandidates c = new AutoCompletionCandidates();
-//
-//        	if (projectName != null) {
-//        		Job<?, ?> job = Hudson.getInstance().getItem(projectName, defaultJob, Job.class);
-//
-//        		job.getbui
-//        	}
-//
-//        	return c;
-//        }
+        public ListBoxModel doFillCredentialsIdItems() {
+            ListBoxModel m = new ListBoxModel();
 
-        public ListBoxModel doFillPermaLinkItems(@AncestorInPath Job<?, ?> defaultJob, @QueryParameter("projectName") String projectName) {
+            for (SSHUserPassword u : CredentialsProvider.lookupCredentials(SSHUserPassword.class, Hudson.getInstance(),
+                            ACL.SYSTEM)) {
+                m.add(u.getUsername()
+                                + (StringUtils.isNotEmpty(u.getDescription()) ? " (" + u.getDescription() + ")" : ""),
+                                u.getId());
+            }
+
+            return m;
+        }
+
+        public ListBoxModel doFillPermaLinkItems(@AncestorInPath Job<?, ?> defaultJob,
+                        @QueryParameter("projectName") String projectName) {
             // gracefully fall back to some job, if none is given
             Job<?, ?> j = null;
             if (projectName != null)
@@ -352,12 +438,14 @@ public class MavenDeploymentDownloader extends Builder {
         }
 
         /**
-         * checks the pattern used to strip the version of the file name - this is optional, as we have a default.
+         * checks the pattern used to strip the version of the file name - this
+         * is optional, as we have a default.
          *
          * @see VersionUtil#SNAPSHOT_FILE_PATTERN_STR
          * @see VersionUtil#VERSION_FILE_PATTERN_STR
          */
-        public FormValidation doCheckStripVersionPattern(@QueryParameter String value) throws IOException, ServletException {
+        public FormValidation doCheckStripVersionPattern(@QueryParameter String value) throws IOException,
+                        ServletException {
             String pattern = Util.fixEmptyAndTrim(value);
             if (pattern != null) {
                 try {
