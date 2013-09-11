@@ -4,6 +4,7 @@ import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
+import hudson.PermalinkList;
 import hudson.Util;
 import hudson.console.HyperlinkNote;
 import hudson.model.AutoCompletionCandidates;
@@ -36,6 +37,8 @@ import java.util.regex.PatternSyntaxException;
 
 import javax.servlet.ServletException;
 
+import jenkins.model.PeepholePermalink;
+
 import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.tokenmacro.MacroEvaluationException;
 import org.jenkinsci.plugins.tokenmacro.TokenMacro;
@@ -66,6 +69,9 @@ public class MavenDeploymentDownloader extends Builder {
 
     private static final String BUILD_NUMBER_LINK_NAME = "Build Number";
     private static final String BUILD_NUMBER_LINK_ID = "buildNumber";
+
+    private static final String LAST_COMPLETED_BUILD_NAME = "Last Completed Build";
+    private static final String LAST_COMPLETED_BUILD_ID = "lastCompletedBuild";
 
     private final String projectName;
     private final String filePattern;
@@ -198,18 +204,13 @@ public class MavenDeploymentDownloader extends Builder {
         return credentialsId;
     }
 
-    public void logResolvedArtifact(String resolvedProjectName, Run<?, ?> resolvedJob, Permalink link,
+    public void logResolvedArtifact(String resolvedProjectName, Run<?, ?> resolvedJob, String linkId, String linkName,
                     PrintStream console) {
         // do some hyper linked logging
-        final String jobUrl = Hudson.getInstance().getRootUrl() + "job/" + resolvedProjectName;
+        final String rootUrl = StringUtils.defaultIfBlank(Hudson.getInstance().getRootUrl(), "/");
+        final String jobUrl = rootUrl + "job/" + resolvedProjectName;
         final String linkBuildNr = HyperlinkNote.encodeTo(jobUrl + "/" + resolvedJob.number, "#" + resolvedJob.number);
-
-        final String linkPerma;
-        if (link == null) {
-            linkPerma = linkBuildNr;
-        } else {
-            linkPerma = HyperlinkNote.encodeTo(jobUrl + "/" + link.getId(), link.getDisplayName());
-        }
+        final String linkPerma = HyperlinkNote.encodeTo(jobUrl + "/" + linkId, linkName);
         final String linkJob = HyperlinkNote.encodeTo(jobUrl, resolvedProjectName);
 
         console.println(Messages.resolveArtifact(linkBuildNr, linkPerma, linkJob));
@@ -260,9 +261,9 @@ public class MavenDeploymentDownloader extends Builder {
         }
         List<MavenDeploymentLinkerAction> linkerActions = Collections.emptyList();
 
-        final String expandedBuildNumber = envVars.expand(buildNumber);
-
         if (BUILD_NUMBER_LINK_ID.equals(permaLink)) {
+            final String expandedBuildNumber = envVars.expand(buildNumber);
+
             if (!StringUtils.isNumeric(expandedBuildNumber)) {
                 console.println(Messages.notANumber(expandedBuildNumber, buildNumber));
             } else {
@@ -271,17 +272,28 @@ public class MavenDeploymentDownloader extends Builder {
                     console.println(Messages.buildDoesNotExist(expandedBuildNumber, job.getName()));
                 } else {
                     linkerActions = resolvedJob.getActions(MavenDeploymentLinkerAction.class);
-
-                    logResolvedArtifact(resolvedProjectName, resolvedJob, null, console);
+                    logResolvedArtifact(resolvedProjectName, resolvedJob, BUILD_NUMBER_LINK_ID, BUILD_NUMBER_LINK_NAME,
+                                    console);
                 }
             }
+        } else if (LAST_COMPLETED_BUILD_ID.equals(permaLink)) {
+            final Run<?, ?> resolvedJob = job.getLastCompletedBuild();
+
+            if (resolvedJob == null) {
+                console.println(Messages.buildDoesNotExist(LAST_COMPLETED_BUILD_NAME, job.getName()));
+            } else {
+                linkerActions = resolvedJob.getActions(MavenDeploymentLinkerAction.class);
+                logResolvedArtifact(resolvedProjectName, resolvedJob, LAST_COMPLETED_BUILD_ID,
+                                LAST_COMPLETED_BUILD_NAME, console);
+            }
+
         } else {
             for (Permalink link : job.getPermalinks()) {
                 if (link.getId().equals(permaLink)) {
                     final Run<?, ?> resolvedJob = link.resolve(job);
                     linkerActions = resolvedJob.getActions(MavenDeploymentLinkerAction.class);
 
-                    logResolvedArtifact(resolvedProjectName, resolvedJob, link, console);
+                    logResolvedArtifact(resolvedProjectName, resolvedJob, link.getId(), link.getDisplayName(), console);
                 }
             }
         }
@@ -357,8 +369,8 @@ public class MavenDeploymentDownloader extends Builder {
         return fname;
     }
 
-    private boolean downloadFile(AsyncHttpClient client, String url, FilePath target, PrintStream console) throws InterruptedException,
-                    ExecutionException, IOException {
+    private boolean downloadFile(AsyncHttpClient client, String url, FilePath target, PrintStream console)
+                    throws InterruptedException, ExecutionException, IOException {
         final Response response = client.prepareGet(url).execute().get();
 
         if (response.getStatusCode() == 200) {
@@ -414,8 +426,8 @@ public class MavenDeploymentDownloader extends Builder {
             for (Permalink p : j.getPermalinks()) {
                 r.add(new Option(p.getDisplayName(), p.getId()));
             }
-
-            // add also job number action
+            // also add buildNumber and lastCompetedBuild
+            r.add(new Option(LAST_COMPLETED_BUILD_NAME, LAST_COMPLETED_BUILD_ID));
             r.add(new Option(BUILD_NUMBER_LINK_NAME, BUILD_NUMBER_LINK_ID));
 
             return r;
