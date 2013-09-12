@@ -2,12 +2,12 @@ package hudson.plugins.mavendeploymentlinker;
 
 import hudson.model.Action;
 
-import org.apache.commons.lang.StringUtils;
-import org.kohsuke.stapler.export.Exported;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+
+import org.apache.commons.lang.StringUtils;
+import org.kohsuke.stapler.export.Exported;
 
 public class MavenDeploymentLinkerAction implements Action {
   

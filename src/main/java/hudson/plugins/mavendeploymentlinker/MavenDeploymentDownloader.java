@@ -4,7 +4,6 @@ import hudson.EnvVars;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
-import hudson.PermalinkList;
 import hudson.Util;
 import hudson.console.HyperlinkNote;
 import hudson.model.AutoCompletionCandidates;
@@ -36,8 +35,6 @@ import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 import javax.servlet.ServletException;
-
-import jenkins.model.PeepholePermalink;
 
 import org.apache.commons.lang.StringUtils;
 import org.jenkinsci.plugins.tokenmacro.MacroEvaluationException;

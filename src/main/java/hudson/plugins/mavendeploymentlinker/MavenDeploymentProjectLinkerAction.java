@@ -1,8 +1,8 @@
 package hudson.plugins.mavendeploymentlinker;
 
 import hudson.model.Action;
-import hudson.model.AbstractProject;
 import hudson.model.Result;
+import hudson.model.AbstractProject;
 import hudson.model.Run;
 import hudson.util.RunList;
 
