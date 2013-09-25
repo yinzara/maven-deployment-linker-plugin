@@ -26,21 +26,21 @@ public class MavenDeploymentProjectLinkerAction implements Action {
     public String getUrlName() {
         return "";
     }
-    
+
     @Exported
     public boolean hasLatestDeployments() {
         return getLatestDeployments() != null;
     }
-    
+
     @Exported
     public Action getLatestDeployments() {
-        Run lastSuccessfulBuild = project.getLastSuccessfulBuild();
+        Run<?,?> lastSuccessfulBuild = project.getLastSuccessfulBuild();
         if (lastSuccessfulBuild == null) {
             return null;
         }
         return lastSuccessfulBuild.getAction(MavenDeploymentLinkerAction.class);
     }
-    
+
     @Exported
     public boolean hasLatestReleaseDeployments() {
         return getLatestReleaseDeployments() != null;
@@ -49,7 +49,7 @@ public class MavenDeploymentProjectLinkerAction implements Action {
     @Exported
     public Action getLatestReleaseDeployments() {
         RunList<?> builds = project.getBuilds();
-        for (Run run : builds) {
+        for (Run<?,?> run : builds) {
             if (isSuccessful(run)) {
                 MavenDeploymentLinkerAction linkerAction = run.getAction(MavenDeploymentLinkerAction.class);
                 if (linkerAction != null && linkerAction.isRelease()) {

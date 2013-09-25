@@ -6,12 +6,12 @@
     <parent>
         <groupId>org.jenkins-ci.plugins</groupId>
         <artifactId>plugin</artifactId>
-        <version>1.509.1</version>
+        <version>1.509.3</version>
     </parent>
 
     <groupId>org.jvnet.hudson.plugins</groupId>
     <artifactId>maven-deployment-linker</artifactId>
-    <version>1.6.0.1-SNAPSHOT</version>
+    <version>1.6.0-SNAPSHOT</version>
     <packaging>hpi</packaging>
     <name>Maven Deployment Linker</name>
     <url>http://wiki.hudson-ci.org/display/HUDSON/Maven+Deployment+Linker</url>
@@ -45,6 +45,8 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven-hpi-plugin.version>1.97</maven-hpi-plugin.version>
+        <target-jdk.version>1.6</target-jdk.version>
     </properties>
 
     <scm>
@@ -67,31 +69,20 @@
         </pluginRepository>
     </pluginRepositories>
 
-    <dependencies>
-        <dependency>
-            <groupId>org.jenkins-ci.plugins</groupId>
-            <artifactId>async-http-client</artifactId>
-            <version>1.7.4</version>
-        </dependency>
-        <dependency>
-            <groupId>org.jenkins-ci.plugins</groupId>
-            <artifactId>token-macro</artifactId>
-            <version>1.5.1</version>
-        </dependency>
-        <dependency>
-            <groupId>org.jenkins-ci.plugins</groupId>
-            <artifactId>ssh-credentials</artifactId>
-            <version>0.4</version>
-        </dependency>
-    </dependencies>
-
     <build>
         <plugins>
             <plugin>
                 <groupId>org.jenkins-ci.tools</groupId>
                 <artifactId>maven-hpi-plugin</artifactId>
-                <version>1.90</version>
                 <extensions>true</extensions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>${target-jdk.version}</source>
+                    <target>${target-jdk.version}</target>
+                </configuration>
             </plugin>
         </plugins>
         <pluginManagement>
@@ -144,6 +135,25 @@
             </plugins>
         </pluginManagement>
     </build>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.jenkins-ci.plugins</groupId>
+            <artifactId>async-http-client</artifactId>
+            <version>1.7.4</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jenkins-ci.plugins</groupId>
+            <artifactId>token-macro</artifactId>
+            <version>1.5.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jenkins-ci.plugins</groupId>
+            <artifactId>ssh-credentials</artifactId>
+            <version>0.4</version>
+        </dependency>
+    </dependencies>
+
 </project>
 
 

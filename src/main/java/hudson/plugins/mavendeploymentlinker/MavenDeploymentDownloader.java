@@ -319,19 +319,19 @@ public class MavenDeploymentDownloader extends Builder {
 
                         SSHUserPassword credentials = lookupCredentials();
 
-                        AsyncHttpClient client;
-                        if (credentials == null) {
-                            client = new AsyncHttpClient();
-                        } else {
-                            AsyncHttpClientConfig.Builder builder = new AsyncHttpClientConfig.Builder();
-                            Realm realm = new Realm.RealmBuilder().setPrincipal(credentials.getUsername())
-                                            .setPassword(Secret.toString(credentials.getPassword()))
-                                            .setUsePreemptiveAuth(true).setScheme(AuthScheme.BASIC).build();
-                            builder.setRealm(realm).build();
-                            client = new AsyncHttpClient(builder.build());
-                        }
-
+                        AsyncHttpClient client = null;
                         try {
+                            if (credentials == null) {
+                                client = new AsyncHttpClient();
+                            } else {
+                                AsyncHttpClientConfig.Builder builder = new AsyncHttpClientConfig.Builder();
+                                Realm realm = new Realm.RealmBuilder().setPrincipal(credentials.getUsername())
+                                                .setPassword(Secret.toString(credentials.getPassword()))
+                                                .setUsePreemptiveAuth(true).setScheme(AuthScheme.BASIC).build();
+                                builder.setRealm(realm).build();
+                                client = new AsyncHttpClient(builder.build());
+                            }
+
                             if (!downloadFile(client, url, fp, console)) {
                                 return false;
                             }
@@ -339,6 +339,10 @@ public class MavenDeploymentDownloader extends Builder {
                             console.println(Messages.downloadArtifactFailed(HyperlinkNote.encodeTo(url, url),
                                             e.getMessage()));
                             throw new IOException(Messages.downloadArtifactFailed(url, e.getMessage()), e);
+                        } finally {
+                            if (client != null) {
+                                client.closeAsynchronously();
+                            }
                         }
                     }
                 }
