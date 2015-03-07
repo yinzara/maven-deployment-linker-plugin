@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<actions>
+        <action>
+            <actionName>debug</actionName>
+            <packagings>
+                <packaging>hpi</packaging>
+            </packagings>
+            <goals>
+                <goal>hpi:run</goal>
+            </goals>
+            <properties>
+                <jpda.listen>maven</jpda.listen>
+                
+                <jetty.port>8085</jetty.port>
+                <port>8085</port>
+            </properties>
+        </action>
+    </actions>

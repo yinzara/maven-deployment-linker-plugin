@@ -45,13 +45,15 @@ import org.kohsuke.stapler.QueryParameter;
 import org.kohsuke.stapler.Stapler;
 import org.kohsuke.stapler.StaplerRequest;
 
-import com.cloudbees.jenkins.plugins.sshcredentials.SSHUserPassword;
 import com.cloudbees.plugins.credentials.CredentialsProvider;
+import com.cloudbees.plugins.credentials.common.StandardUsernamePasswordCredentials;
+import com.cloudbees.plugins.credentials.domains.DomainRequirement;
 import com.ning.http.client.AsyncHttpClient;
 import com.ning.http.client.AsyncHttpClientConfig;
 import com.ning.http.client.Realm;
 import com.ning.http.client.Realm.AuthScheme;
 import com.ning.http.client.Response;
+import jenkins.model.Jenkins;
 
 /**
  * This builder is able to resolve the linked maven artifacts on other projects
@@ -213,11 +215,12 @@ public class MavenDeploymentDownloader extends Builder {
         console.println(Messages.resolveArtifact(linkBuildNr, linkPerma, linkJob));
     }
 
-    private SSHUserPassword lookupCredentials() {
+    private StandardUsernamePasswordCredentials lookupCredentials() {
         if (credentialsId != null) {
-            final List<SSHUserPassword> credentialsList = CredentialsProvider.lookupCredentials(SSHUserPassword.class,
-                            Hudson.getInstance(), ACL.SYSTEM);
-            for (final SSHUserPassword credentials : credentialsList) {
+            
+            final List<StandardUsernamePasswordCredentials> credentialsList = CredentialsProvider.lookupCredentials(StandardUsernamePasswordCredentials.class,
+                            Jenkins.getInstance(), ACL.SYSTEM, Collections.<DomainRequirement>emptyList());
+            for (final StandardUsernamePasswordCredentials credentials : credentialsList) {
                 if (credentials.getId().equals(credentialsId)) {
                     return credentials;
                 }
@@ -317,7 +320,7 @@ public class MavenDeploymentDownloader extends Builder {
                         FilePath fp = new FilePath(targetDirFp, fileName);
                         console.println(Messages.downloadArtifact(HyperlinkNote.encodeTo(url, url), fp.getRemote()));
 
-                        SSHUserPassword credentials = lookupCredentials();
+                        StandardUsernamePasswordCredentials credentials = lookupCredentials();
 
                         AsyncHttpClient client = null;
                         try {
@@ -404,8 +407,8 @@ public class MavenDeploymentDownloader extends Builder {
         public ListBoxModel doFillCredentialsIdItems() {
             ListBoxModel m = new ListBoxModel();
 
-            for (SSHUserPassword u : CredentialsProvider.lookupCredentials(SSHUserPassword.class, Hudson.getInstance(),
-                            ACL.SYSTEM)) {
+            for (StandardUsernamePasswordCredentials u : CredentialsProvider.lookupCredentials(StandardUsernamePasswordCredentials.class, Jenkins.getInstance(),
+                            ACL.SYSTEM, Collections.<DomainRequirement>emptyList())) {
                 m.add(u.getUsername()
                                 + (StringUtils.isNotEmpty(u.getDescription()) ? " (" + u.getDescription() + ")" : ""),
                                 u.getId());
