@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
@@ -44,16 +44,9 @@
     </developers>
 
     <properties>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven-hpi-plugin.version>1.97</maven-hpi-plugin.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>        
         <target-jdk.version>1.6</target-jdk.version>
     </properties>
-
-    <scm>
-        <connection>scm:git:https://github.com/ederst/maven-deployment-linker-plugin.git</connection>
-        <developerConnection>scm:git:https://github.com/ederst/maven-deployment-linker-plugin.git</developerConnection>
-        <url>https://github.com/ederst/maven-deployment-linker-plugin</url>
-    </scm>
 
     <repositories>
         <repository>
@@ -68,12 +61,24 @@
             <url>http://repo.jenkins-ci.org/public/</url>
         </pluginRepository>
     </pluginRepositories>
-
+    <scm>
+        <url>https://github.com/yinzara/maven-deployment-linker-plugin</url>
+        <connection>scm:git:git://github.com/yinzara/maven-deployment-linker-plugin</connection>
+        <developerConnection>scm:git:git@github.com:yinzara/maven-deployment-linker-plugin.git</developerConnection>
+        <tag>HEAD</tag>
+    </scm>
+    <distributionManagement>
+        <repository>
+            <id>codewaretech.release</id>
+            <url>http://dev.codewaretech.com/artifactory/ext-release-local</url>
+        </repository>
+    </distributionManagement>
     <build>
         <plugins>
             <plugin>
                 <groupId>org.jenkins-ci.tools</groupId>
                 <artifactId>maven-hpi-plugin</artifactId>
+                <version>1.112</version>
                 <extensions>true</extensions>
                 <configuration>
                     <port>8085</port>
@@ -95,8 +100,26 @@
                     <artifactId>maven-localizer-plugin</artifactId>
                     <version>1.14</version>
                 </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>versions-maven-plugin</artifactId>
+                    <version>2.1</version>
+                </plugin>
+                <plugin>
+                    <artifactId>maven-scm-plugin</artifactId>
+                    <version>1.9.2</version>                    
+                </plugin>
+                <plugin>
+                    <artifactId>maven-release-plugin</artifactId>
+                    <version>2.5.1</version>
+                </plugin>
+                <plugin>
+                    <artifactId>maven-source-plugin</artifactId>
+                    <version>2.4</version>
+                </plugin>
+           
                 <!--This plugin's configuration is used to store Eclipse m2e settings only. It has no influence on the Maven
-                    build itself. -->
+                build itself. -->
                 <plugin>
                     <groupId>org.eclipse.m2e</groupId>
                     <artifactId>lifecycle-mapping</artifactId>
@@ -143,7 +166,7 @@
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
             <artifactId>async-http-client</artifactId>
-            <version>1.7.4</version>
+            <version>1.7.8</version>
         </dependency>
         <dependency>
             <groupId>org.jenkins-ci.plugins</groupId>
